@@ -6,31 +6,37 @@ var Sync = {
   _baseURL: "https://cifnfqhagdmxvhruybmy.supabase.co/rest/v1",
   _apiKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNpZm5mcWhhZ2RteHZocnV5Ym15Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk4NDc5NTEsImV4cCI6MjA5NTQyMzk1MX0.nIGkv0mxkl0MKNNJd62577a0ANOaW6pMWij7Haqmi44",
 
-  // 初始化
+  // 初始化（不阻塞应用启动）
   async init() {
-    try {
-      var userInfo = await DB.getUser();
-      if (!userInfo || !userInfo.deviceId) {
-        this.deviceId = this._generateUUID();
+    // 先初始化本地设备 ID
+    var userInfo = await DB.getUser();
+    if (!userInfo || !userInfo.deviceId) {
+      this.deviceId = this._generateUUID();
+      await DB.saveUser({ id: 1, deviceId: this.deviceId, lastSyncAt: "1970-01-01T00:00:00Z" });
+    } else {
+      this.deviceId = userInfo.deviceId;
+      if (!userInfo.lastSyncAt) {
         await DB.saveUser({ id: 1, deviceId: this.deviceId, lastSyncAt: "1970-01-01T00:00:00Z" });
-      } else {
-        this.deviceId = userInfo.deviceId;
-        if (!userInfo.lastSyncAt) {
-          await DB.saveUser({ id: 1, deviceId: this.deviceId, lastSyncAt: "1970-01-01T00:00:00Z" });
-        }
       }
-      // 测试连接
-      var testResult = await this._fetch("GET", "/entries?limit=1");
-      if (testResult.ok) {
+    }
+    console.log("Device ID:", this.deviceId);
+
+    // 后台测试连接（不阻塞 UI）
+    this._testConnection();
+  },
+
+  async _testConnection() {
+    try {
+      var result = await this._fetch("GET", "/entries?limit=1");
+      if (result.ok) {
         this.enabled = true;
-        console.log("Sync enabled, device:", this.deviceId);
+        console.log("Sync enabled");
+        await UI.updateSyncBar();
       } else {
-        console.warn("Sync connection test failed:", testResult.status, testResult.error || "unknown");
-        this.enabled = false;
+        console.warn("Sync test failed (status " + result.status + "), will retry");
       }
     } catch (err) {
-      console.warn("Sync init failed:", err.message);
-      this.enabled = false;
+      console.warn("Sync test failed, will retry:", err.message);
     }
   },
 
@@ -47,8 +53,14 @@ var Sync = {
     var options = { method: method, headers: headers };
     if (body) options.body = JSON.stringify(body);
 
+    // 8 秒超时
+    var controller = new AbortController();
+    var timeoutId = setTimeout(function () { controller.abort(); }, 8000);
+    options.signal = controller.signal;
+
     try {
       var response = await fetch(this._baseURL + path, options);
+      clearTimeout(timeoutId);
       var result = { ok: response.ok, status: response.status, data: null };
       if (response.ok && method !== "DELETE") {
         var text = await response.text();
@@ -56,6 +68,7 @@ var Sync = {
       }
       return result;
     } catch (err) {
+      clearTimeout(timeoutId);
       return { ok: false, status: 0, error: err.message };
     }
   },
