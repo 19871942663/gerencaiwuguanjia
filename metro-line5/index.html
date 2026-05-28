@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>武汉地铁五号线 · 列车运行图</title>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mammoth@1.8.0/mammoth.browser.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;background:#f0f2f5;color:#333;min-height:100vh}
+.header{background:#fff;padding:0 20px;height:50px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #e8e8e8;box-shadow:0 1px 3px rgba(0,0,0,.04)}
+.header h1{font-size:16px;font-weight:600}.header h1 span{font-size:10px;background:#e8223e;color:#fff;padding:1px 7px;border-radius:8px;margin-left:6px}
+.btn{height:30px;padding:0 12px;border-radius:5px;border:1px solid #d9d9d9;background:#fff;font-size:12px;cursor:pointer;display:inline-flex;align-items:center;gap:4px;color:#555}
+.btn:hover{border-color:#1677ff;color:#1677ff}
+.btn-p{background:#1677ff;color:#fff;border-color:#1677ff}.btn-p:hover{background:#4096ff;color:#fff}
+.toolbar{padding:8px 20px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:#fff;border-bottom:1px solid #eee}
+.filter-tag{height:26px;padding:0 10px;border-radius:13px;border:1px solid #d9d9d9;background:#fff;font-size:11px;cursor:pointer;color:#666}
+.filter-tag.on{background:#1677ff;color:#fff;border-color:#1677ff}
+.stats{margin-left:auto;font-size:11px;color:#999}
+.main{padding:10px 20px 0}
+.empty{text-align:center;padding:60px 20px;color:#999}
+.empty h3{font-size:16px;margin-bottom:6px;color:#666}.empty p{font-size:13px}
+.track-wrap{background:#fff;border-radius:8px;box-shadow:0 1px 4px rgba(0,0,0,.05);overflow:hidden}
+.track-area{overflow-x:auto;padding:16px 20px 10px;min-height:175px}
+.track-canvas{position:relative;min-width:100%}
+.track-line{position:absolute;left:0;right:0;height:2.5px;border-radius:2px}
+.track-line.up{top:80px;background:#91caff}.track-line.down{top:125px;background:#b7eb8f}
+.station-dot{position:absolute;width:7px;height:7px;border-radius:50%;background:#bbb;z-index:2;transform:translate(-3.5px,-3.5px)}
+.station-dot.key{background:#e8223e;width:9px;height:9px;transform:translate(-4.5px,-4.5px)}
+.station-dot.end{background:#1677ff;width:9px;height:9px;transform:translate(-4.5px,-4.5px)}
+.station-name{position:absolute;font-size:10px;color:#999;white-space:nowrap;transform:translateX(-50%)}
+.train-block{position:absolute;height:20px;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;color:#fff;cursor:pointer;z-index:5;padding:0 4px;min-width:32px;box-shadow:0 1px 2px rgba(0,0,0,.15);transition:box-shadow .15s,transform .15s;user-select:none}
+.train-block:hover{box-shadow:0 2px 10px rgba(0,0,0,.3);z-index:10;transform:scale(1.08)}
+.train-block.up{background:#1677ff;top:65px}.train-block.down{background:#52c41a;top:110px}
+.depot-tag{position:absolute;font-size:9px;color:#bbb;padding:2px 5px;background:#fffbe6;border:1px dashed #e8c000;border-radius:3px;white-space:nowrap;transform:translateX(-50%)}
+.time-bar{background:#fafafa;border-top:1px solid #eee;padding:6px 16px;display:flex;align-items:center;gap:8px}
+.time-bar .t{font-size:13px;font-weight:600;font-family:monospace;min-width:38px;text-align:center}
+.time-bar input[type=range]{flex:1;height:4px;-webkit-appearance:none;background:#e0e0e0;border-radius:2px;outline:none}
+.time-bar input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;border-radius:50%;background:#1677ff;cursor:pointer;border:2px solid #fff}
+.ctrl-btn{width:26px;height:26px;border-radius:50%;border:1px solid #ddd;background:#fff;cursor:pointer;font-size:12px;display:flex;align-items:center;justify-content:center}
+.ctrl-btn:hover{border-color:#1677ff;color:#1677ff}.ctrl-btn.on{background:#1677ff;color:#fff;border-color:#1677ff}
+.speed-sel{height:24px;border:1px solid #ddd;border-radius:3px;padding:0 3px;font-size:11px}
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:200;display:flex;align-items:center;justify-content:center}
+.modal{background:#fff;border-radius:10px;width:90%;max-width:460px;max-height:80vh;overflow-y:auto;box-shadow:0 8px 30px rgba(0,0,0,.15)}
+.modal-h{padding:14px 18px;border-bottom:1px solid #f0f0f0;display:flex;align-items:center;justify-content:space-between}
+.modal-h h3{font-size:15px}.close-btn{background:none;border:none;color:#999;font-size:16px;cursor:pointer}
+.modal-b{padding:14px 18px;font-size:12px}
+.modal-b table{width:100%;border-collapse:collapse}
+.modal-b td{padding:5px 8px;border-bottom:1px solid #f5f5f5}
+.modal-b .seq{display:inline-block;width:16px;height:16px;line-height:16px;text-align:center;background:#f0f0f0;border-radius:50%;font-size:9px;margin-right:4px}
+.depot-box{margin-top:10px;padding:10px 12px;background:#f6ffed;border-radius:6px;line-height:1.8;border:1px solid #d9f7be;font-size:12px}
+@media(max-width:768px){.header{padding:0 10px}.toolbar{padding:6px 10px}.main{padding:6px 10px 0}.track-area{padding:10px 12px 8px;min-height:145px}.train-block{height:18px;font-size:9px;min-width:28px}}
+</style>
+</head>
+<body>
+<header class="header">
+  <h1>武汉地铁五号线<span>5号线</span></h1>
+  <div style="display:flex;gap:6px">
+    <button class="btn btn-p" onclick="document.getElementById('fileInput').click()">导入运行图</button>
+    <input type="file" id="fileInput" accept=".csv,.xlsx,.xls,.docx,.pdf" style="display:none" onchange="handleImport(event)">
+    <button class="btn" onclick="clearAll()">清空</button>
+  </div>
+</header>
+<div class="toolbar">
+  <button class="filter-tag on" data-f="all" onclick="setF('all')">全部</button>
+  <button class="filter-tag" data-f="上行" onclick="setF('上行')" style="color:#1677ff">上行 武汉站→红霞</button>
+  <button class="filter-tag" data-f="下行" onclick="setF('下行')" style="color:#52c41a">下行 红霞→武汉站</button>
+  <span class="stats" id="stats"></span>
+</div>
+<div class="main">
+  <div id="emptyState" class="empty"><h3>暂无数据</h3><p>导入 WH05-057-34train-A-2运行图说明.docx</p></div>
+  <div class="track-wrap" id="lineView" style="display:none">
+    <div class="track-area"><div class="track-canvas" id="trackCanvas"></div></div>
+    <div class="time-bar">
+      <button class="ctrl-btn" id="playBtn" onclick="togglePlay()">▶</button>
+      <span class="t" id="timeDisp">05:00</span>
+      <input type="range" id="timeSlider" min="0" max="1170" value="0" oninput="onSlider()">
+      <span style="font-size:9px;color:#bbb">05</span><span style="font-size:9px;color:#bbb">00:30</span>
+      <select class="speed-sel" id="speedSel" onchange="pSpeed=parseInt(this.value)"><option value="1">1x</option><option value="5">5x</option><option value="60" selected>60x</option><option value="300">300x</option></select>
+      <button class="btn" onclick="jumpNow()" style="height:24px;font-size:10px">现在</button>
+    </div>
+  </div>
+</div>
+<div class="modal-overlay" id="trainModal" style="display:none" onclick="if(event.target===this)closeModal()">
+  <div class="modal"><div class="modal-h"><h3 id="modalTitle"></h3><button class="close-btn" onclick="closeModal()">✕</button></div><div class="modal-b" id="modalBody"></div></div>
+</div>
+<script>
+// ========== 基础数据 ==========
+var ST=['红霞','黄家湖(武科大)','中医药大学','白沙六路','光霞','张家湾','烽火村','八铺街','复兴路','彭刘杨','司门口黄鹤楼','昙华林武胜门','积玉桥','三层楼','三角路','徐家棚','杨园铁四院','余家头','科普公园','建设二路','和平公园','红钢城','青宜居','工人村','武钢','厂前','武汉站东广场'];
+var SD=[1.353,1.302,3.732,1.103,1.868,1.603,1.307,1.510,0.866,0.603,0.878,0.834,1.070,1.838,1.261,1.213,1.283,1.601,1.374,1.231,1.627,1.857,1.555,1.884,1.432,1.031];
+var N=ST.length,DG=23,DQ=2,DWELL=30,TURN=240,KST=[0,2,12,15,23,26];
+var ST_GAP=130,TRACK_PAD=30;
+
+function ttime(seg){return Math.round(SD[seg]*79+10)}
+function fmt(s){if(s==null)return'--';var h=Math.floor(s/3600)%24;return String(h).padStart(2,'0')+':'+String(Math.floor((s%3600)/60)).padStart(2,'0')}
+function toSec(str){if(!str||str==='--')return null;var p=str.trim().split(':');if(p.length<2)return null;return parseInt(p[0])*3600+parseInt(p[1])*60}
+function routeTime(from,to){var t=0;if(from<to)for(var s=from;s<to;s++)t+=ttime(s)+DWELL;else for(var s=from-1;s>=to;s--)t+=ttime(s)+DWELL;return t}
+
+// ========== 状态 ==========
+var trains=[],filter='all',curTrain=null,simTime=null,playing=false,pSpeed=60,animId=null;
+
+function save(){try{localStorage.setItem('whm5_data',JSON.stringify(trains))}catch(e){}}
+function load(){try{var r=localStorage.getItem('whm5_data');if(r)trains=JSON.parse(r)}catch(e){trains=[]}}
+
+// ========== 解析运行图说明 ==========
+function parseDoc(raw){
+  var dict={},lines=raw.split('\n').map(function(l){return l.trim()});
+  function parseSection(key){
+    var recs=[],inSec=false,buf=[];
+    for(var i=0;i<lines.length;i++){
+      var ln=lines[i];
+      if(ln===key){inSec=true;buf=[];continue}
+      if(!inSec)continue;
+      if(ln==='回车安排'||ln.startsWith('注：')||ln.startsWith('附件'))break;
+      if(!ln)continue;
+      if(ln==='序号'||ln==='班次'||ln.includes('场段')||ln.includes('出车时间')||ln==='回车场段'||ln.includes('到达时间'))continue;
+      buf.push(ln);
+      if(buf.length===4){
+        var num=buf[1].replace(/[（(][^)）]*[)）]/g,'').trim().match(/(\d{3})/);
+        var dm=buf[2].match(/(工人村车辆段|青菱停车场)(转换轨\d)/);
+        var tm=toSec(buf[3]);
+        if(num&&dm&&tm!==null)recs.push({number:num[1],depot:dm[1],track:dm[2],time:tm});
+        buf=[];
+      }
+    }
+    return recs;
+  }
+  parseSection('出车安排').forEach(function(r){if(!dict[r.number])dict[r.number]={number:r.number,depart:null,arrive:null};dict[r.number].depart=r});
+  parseSection('回车安排').forEach(function(r){if(!dict[r.number])dict[r.number]={number:r.number,depart:null,arrive:null};dict[r.number].arrive=r});
+  return Object.values(dict).filter(function(t){return t.depart&&t.depart.time!==null}).sort(function(a,b){return a.depart.time-b.depart.time});
+}
+
+// ========== 生成运行图 ==========
+function buildDiagram(depotList){
+  var result=[];
+  depotList.forEach(function(dt){
+    var isUp=dt.depart.track.includes('1');  // 转1=上行, 转2=下行
+    var depotSt=dt.depart.depot.includes('工人村')?DG:DQ;
+    var retDepotSt=dt.arrive&&dt.arrive.depot?dt.arrive.depot.includes('工人村')?DG:DQ:-1;
+    var retTime=dt.arrive?dt.arrive.time:26*3600;
+    var fullTrip=routeTime(0,N-1);  // 全程运行时间
+
+    // 首趟：段场站→终点站（按初始方向）
+    var firstEnd=isUp?0:N-1;
+
+    // 生成班次：始终全程交路（终端↔终端），首末趟例外
+    var curT=dt.depart.time, curSt=depotSt, curDir=isUp?'上行':'下行';
+    var seqN=0;
+
+    while(curT<retTime&&seqN<40){
+      var endSt;
+      if(seqN===0){endSt=firstEnd}
+      else{curDir=curDir==='上行'?'下行':'上行';endSt=curDir==='上行'?0:N-1}
+
+      // 如果这趟完成时间会远超回车时间，截断到回车场站
+      var estEnd=curT+routeTime(curSt,endSt);
+      if(retDepotSt>=0&&estEnd>retTime+120){
+        // 只保留能开完的，其余截断
+        if(seqN===0){endSt=retDepotSt}
+        else{endSt=retDepotSt;if(curSt===endSt)break}
+      }
+
+      // 构建序列
+      var seq=[];if(curSt<endSt)for(var s=curSt;s<=endSt;s++)seq.push(s);else for(var s=curSt;s>=endSt;s--)seq.push(s);
+      if(seq.length<2)break;
+
+      var sch=new Array(N),cum=0;
+      for(var p=0;p<seq.length;p++){var si=seq[p];sch[si]={arrive:curT+cum,depart:curT+cum+DWELL};if(p<seq.length-1)cum+=ttime(Math.min(seq[p],seq[p+1]))+DWELL}
+      var tripEnd=curT+cum;
+      if(tripEnd>retTime+300)break;
+
+      seqN++;
+      var dirLabel=curSt<endSt?'下行':'上行';
+      result.push({id:'t_'+dt.number+'_'+seqN,number:dt.number,direction:dirLabel,schedule:sch,depotInfo:dt});
+
+      curSt=endSt;curT=tripEnd+TURN;
+      if(endSt===retDepotSt)break;  // 已回段场，结束
+    }
+  });
+  result.sort(function(a,b){var af=a.schedule.find(function(s){return s&&s.arrive!==null});var bf=b.schedule.find(function(s){return s&&s.arrive!==null});return(af?af.arrive:0)-(bf?bf.arrive:0)});
+  return result;
+}
+
+// ========== 导入 ==========
+function handleImport(e){
+  var file=e.target.files[0];if(!file)return;
+  var ext=file.name.split('.').pop().toLowerCase(),reader=new FileReader();
+  reader.onload=function(ev){
+    if(ext==='docx'){
+      if(typeof mammoth==='undefined'){alert('加载中…');return}
+      mammoth.extractRawText({arrayBuffer:ev.target.result}).then(function(r){var dl=parseDoc(r.value);if(!dl.length){alert('未找到出回车安排数据');return}var imp=buildDiagram(dl);if(!imp.length){alert('未能生成运行图');return}trains=imp;save();onReady()}).catch(function(err){alert('解析失败：'+err.message)});
+    }else if(ext==='pdf'){
+      if(typeof pdfjsLib==='undefined'){alert('PDF库加载中');return}
+      pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+      pdfjsLib.getDocument({data:ev.target.result}).promise.then(function(pdf){var ps=[];for(var i=1;i<=pdf.numPages;i++)ps.push(pdf.getPage(i).then(function(pg){return pg.getTextContent().then(function(tc){return tc.items.map(function(it){return it.str}).join(' ')})}));return Promise.all(ps)}).then(function(ts){var all=ts.join('\n'),lines=all.split('\n'),rows=[];for(var i=0;i<lines.length;i++){var ln=lines[i].trim();if(!ln)continue;var cs=ln.split(/\s+/);if(cs.length<5){cs=ln.split(',')}if(cs.length>=5)rows.push(cs)}if(rows.length<2){alert('PDF未找到表格');return}var imp=parseCsv(rows);if(!imp.length){alert('未能解析');return}trains=trains.concat(imp);save();onReady()}).catch(function(err){alert('PDF失败：'+err.message)});
+    }else{var data=new Uint8Array(ev.target.result),wb=XLSX.read(data,{type:'array',cellDates:false}),rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,defval:''});if(rows.length<2){alert('数据不足');return}var imp=parseCsv(rows);if(!imp.length){alert('未能解析');return}trains=trains.concat(imp);save();onReady()}
+  };reader.readAsArrayBuffer(file);e.target.value='';
+}
+function parseCsv(rows){var hdr=-1;for(var i=0;i<rows.length;i++){if(rows[i]&&rows[i].some(function(c){return c!==''&&c!=null})){hdr=i;break}}if(hdr<0)return[];var r=[];for(var ri=hdr+1;ri<rows.length;ri++){var row=rows[ri];if(!row||row.every(function(c){return c===''||c==null}))continue;var cells=row.map(function(c){return String(c||'').trim()}),num=cells[0],dir=cells[1];if(!num||!dir)continue;var d=dir.replace(/\s/g,'');if(/^上|上行|up/i.test(d))d='上行';else if(/^下|下行|down/i.test(d))d='下行';else continue;var rem=cells.slice(2),sch=[];if(rem.length>=N*2-4)for(var i=0;i<N;i++){var arr=i*2<rem.length?toSec(rem[i*2]):null,dep=i*2+1<rem.length?toSec(rem[i*2+1]):null;sch.push({arrive:arr,depart:dep!==null?dep:arr})}else if(rem.length>=3)for(var i=0;i<N;i++){var t2=i<rem.length?toSec(rem[i]):null;sch.push({arrive:t2,depart:t2})}else continue;r.push({id:'csv_'+Date.now()+'_'+ri,number:num,direction:d,schedule:sch})}return r}
+
+function onReady(){filter='all';simTime=null;document.querySelectorAll('.filter-tag[data-f]').forEach(function(b){b.classList.toggle('on',b.dataset.f==='all')});render()}
+
+// ========== 渲染双线图 ==========
+function render(){
+  var st=document.getElementById('stats');st.textContent=trains.length?'共 '+trains.length+' 个班次 | '+new Set(trains.map(function(t){return t.number})).size+' 趟列车':'';
+  if(!trains.length){document.getElementById('emptyState').style.display='';document.getElementById('lineView').style.display='none';return}
+  document.getElementById('emptyState').style.display='none';document.getElementById('lineView').style.display='';renderLine()
+}
+
+function getSimTime(){if(simTime!==null)return simTime;var n=new Date();return n.getHours()*3600+n.getMinutes()*60+n.getSeconds()}
+function setF(f){filter=f;document.querySelectorAll('.filter-tag[data-f]').forEach(function(b){b.classList.toggle('on',b.dataset.f===f)});renderLine()}
+
+function renderLine(){
+  var canvas=document.getElementById('trackCanvas'),tw=TRACK_PAD*2+(N-1)*ST_GAP+20;
+  var stX=ST.map(function(_,i){return TRACK_PAD+i*ST_GAP}),h='',now=getSimTime();
+
+  // 轨道
+  h+='<div class="track-line up" style="left:'+TRACK_PAD+'px;width:'+((N-1)*ST_GAP)+'px"></div>';
+  h+='<div class="track-line down" style="left:'+TRACK_PAD+'px;width:'+((N-1)*ST_GAP)+'px"></div>';
+
+  // 站点
+  stX.forEach(function(x,i){var cls='station-dot';if(i===0||i===N-1)cls+=' end';else if(KST.indexOf(i)>=0)cls+=' key';h+='<div class="'+cls+'" style="left:'+x+'px;top:100px" title="'+ST[i]+'"></div>';h+='<div class="station-name" style="left:'+x+'px;top:110px">'+ST[i]+'</div>'});
+
+  // 段场
+  h+='<div class="depot-tag" style="left:'+stX[DQ]+'px;top:52px">青菱停车场</div>';
+  h+='<div class="depot-tag" style="left:'+stX[DG]+'px;top:52px">工人村车辆段</div>';
+
+  // 时间
+  document.getElementById('timeDisp').textContent=fmt(now);
+  var slider=document.getElementById('timeSlider');if(!slider.dataset.drag||slider.dataset.drag!=='1')slider.value=Math.max(0,Math.min(1170,Math.floor((now-5*3600)/60)));
+
+  // 找活跃列车
+  var filtered=filter==='all'?trains:trains.filter(function(t){return t.direction===filter});
+  var active=[];
+  filtered.forEach(function(train){
+    var tOrder=train.direction==='下行'?ST.map(function(_,i){return i}):ST.map(function(_,i){return N-1-i});
+    var ft=null,lt=null;
+    for(var i=0;i<tOrder.length;i++){var s2=train.schedule[tOrder[i]];if(s2&&s2.depart!==null){if(ft===null)ft=s2.depart;lt=s2.arrive!==null?s2.arrive:s2.depart}}
+    if(ft===null||now<ft-300||now>lt+300)return;
+    var px=null;
+    for(var ti=0;ti<tOrder.length-1;ti++){
+      var ci=tOrder[ti],ni=tOrder[ti+1],s0=train.schedule[ci],s1=train.schedule[ni];
+      if(!s0||!s1||s0.depart===null||s1.arrive===null)continue;
+      if(now>=s0.depart&&now<=s1.arrive){px=stX[ci]+(now-s0.depart)/(s1.arrive-s0.depart)*(stX[ni]-stX[ci]);break}
+      if(now>=s0.arrive&&now<=s0.depart){px=stX[ci];break}
+    }
+    if(px===null&&now>=ft-300&&now<ft){for(var i=0;i<tOrder.length;i++){if(train.schedule[tOrder[i]]&&train.schedule[tOrder[i]].depart!==null){px=stX[tOrder[i]];break}}}
+    if(px===null&&now>lt&&now<=lt+300){for(var i=tOrder.length-1;i>=0;i--){if(train.schedule[tOrder[i]]&&train.schedule[tOrder[i]].arrive!==null){px=stX[tOrder[i]];break}}}
+    if(px!==null)active.push({id:train.id,num:train.number,dir:train.direction,x:px});
+  });
+
+  // 碰撞检测
+  active.sort(function(a,b){return a.x-b.x});var GAP=36,RH=11;
+  function place(list){var placed=[];list.forEach(function(t){var nearby=placed.filter(function(p){return Math.abs(t.x-p.x)<GAP}),used={};nearby.forEach(function(p){used[p.row]=true});var row=0;while(used[row]&&row<8)row++;placed.push({x:t.x,row:row});t.oy=row*RH})}
+  place(active.filter(function(t){return t.dir==='上行'}));place(active.filter(function(t){return t.dir==='下行'}));
+
+  active.forEach(function(t){var cls=t.dir==='上行'?'up':'down';h+='<div class="train-block '+cls+'" style="left:'+t.x+'px;margin-top:'+(t.oy||0)+'px" onclick="showDetail(\''+t.id+'\')" title="'+t.num+' '+t.dir+'">'+t.num+'</div>'});
+
+  canvas.innerHTML=h;canvas.style.width=tw+'px';
+}
+
+// ========== 动画 ==========
+function togglePlay(){playing?stopPlay():startPlay()}
+function startPlay(){playing=true;document.getElementById('playBtn').textContent='⏸';document.getElementById('playBtn').classList.add('on');pSpeed=parseInt(document.getElementById('speedSel').value);simTime=getSimTime();lastT=null;tick()}
+function stopPlay(){playing=false;document.getElementById('playBtn').textContent='▶';document.getElementById('playBtn').classList.remove('on');if(animId){cancelAnimationFrame(animId);animId=null}}
+var lastT=null;
+function tick(ts){if(!playing)return;if(lastT===null)lastT=ts;simTime+=(ts-lastT)/1000*pSpeed;lastT=ts;if(simTime>25*3600)simTime=25*3600;if(simTime<5*3600)simTime=5*3600;renderLine();if(simTime<25*3600)animId=requestAnimationFrame(tick);else stopPlay()}
+function onSlider(){simTime=5*3600+parseInt(document.getElementById('timeSlider').value)*60;renderLine()}
+function jumpNow(){simTime=null;stopPlay();renderLine()}
+(function(){var sl=document.getElementById('timeSlider');sl.addEventListener('mousedown',function(){sl.dataset.drag='1'});sl.addEventListener('touchstart',function(){sl.dataset.drag='1'});sl.addEventListener('mouseup',function(){sl.dataset.drag='0';onSlider()});sl.addEventListener('touchend',function(){sl.dataset.drag='0';onSlider()})})();
+
+// ========== 详情弹窗 ==========
+function showDetail(tid){
+  var train=trains.find(function(t){return t.id===tid});if(!train)return;curTrain=train;
+  document.getElementById('modalTitle').textContent='列车 '+train.number+' · '+train.direction;document.getElementById('trainModal').style.display='flex';
+  var h='<table>';
+  for(var i=0;i<N;i++){var s=train.schedule[i];if(!s||s.arrive===null)continue;h+='<tr><td><span class="seq">'+(i+1)+'</span>'+ST[i]+'</td><td style="font-family:monospace">'+fmt(s.arrive)+'</td><td style="font-family:monospace;color:#999">'+(s.depart!==s.arrive?fmt(s.depart):'')+'</td></tr>'}
+  h+='</table>';
+  if(train.depotInfo){var di=train.depotInfo,entrySt=di.depart.depot.includes('工人村')?ST[DG]:ST[DQ],plat=di.depart.track.includes('1')?'上行(1站台)':'下行(2站台)';h+='<div class="depot-box"><b>出车：</b>'+di.depart.depot+' '+di.depart.track+' → '+entrySt+'站 '+plat+' （'+fmt(di.depart.time)+'）';if(di.arrive)h+='<br><b>回车：</b>'+di.arrive.depot+' '+di.arrive.track+' （'+fmt(di.arrive.time)+'）';h+='</div>'}
+  document.getElementById('modalBody').innerHTML=h;
+}
+function closeModal(){document.getElementById('trainModal').style.display='none';curTrain=null}
+function clearAll(){if(!trains.length)return;if(confirm('确定清空？')){trains=[];save();render()}}
+load();render();
+</script>
+</body>
+</html>
