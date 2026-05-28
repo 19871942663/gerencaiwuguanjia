@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>PDF文本提取</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<style>body{font-family:monospace;padding:20px;background:#f5f5f5;font-size:12px;line-height:1.6}
+#drop{width:100%;min-height:100px;border:2px dashed #ccc;display:flex;align-items:center;justify-content:center;margin-bottom:15px;cursor:pointer;border-radius:8px;color:#999}
+pre{background:#fff;padding:15px;border-radius:8px;overflow:auto;max-height:80vh}
+.time-highlight{background:#fff3cd;padding:1px 3px;border-radius:2px}
+</style>
+</head><body>
+<div id="drop">拖拽PDF文件到此处 或 点击选择</div>
+<input type="file" id="fileInput" accept=".pdf" style="display:none">
+<div id="status"></div>
+<pre id="output"></pre>
+<script>
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+const drop = document.getElementById('drop');
+const fileInput = document.getElementById('fileInput');
+
+drop.onclick = () => fileInput.click();
+drop.ondragover = (e) => { e.preventDefault(); drop.style.borderColor = '#1677ff'; };
+drop.ondragleave = () => { drop.style.borderColor = '#ccc'; };
+drop.ondrop = (e) => { e.preventDefault(); drop.style.borderColor = '#ccc'; handleFile(e.dataTransfer.files[0]); };
+fileInput.onchange = (e) => handleFile(e.target.files[0]);
+
+// 自动尝试加载交路图.pdf
+setTimeout(() => {
+  fetch('交路图.pdf').then(r => r.arrayBuffer()).then(buf => processPDF(buf)).catch(() => {});
+}, 500);
+
+async function handleFile(file) {
+  if (!file) return;
+  const buf = await file.arrayBuffer();
+  processPDF(buf);
+}
+
+async function processPDF(buf) {
+  document.getElementById('status').textContent = '正在解析...';
+  try {
+    const pdf = await pdfjsLib.getDocument({data: buf}).promise;
+    document.getElementById('status').textContent = `共 ${pdf.numPages} 页`;
+    let allText = '';
+
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const textContent = await page.getTextContent();
+      const items = textContent.items;
+
+      // 按Y坐标分组
+      const lines = {};
+      items.forEach(item => {
+        const y = Math.round(item.transform[5]);
+        let key = null;
+        for (const k in lines) {
+          if (Math.abs(parseFloat(k) - y) < 3) { key = k; break; }
+        }
+        if (!key) key = y;
+        if (!lines[key]) lines[key] = [];
+        lines[key].push({x: item.transform[4], text: item.str});
+      });
+
+      const sortedLines = Object.keys(lines).sort((a,b) => parseFloat(b) - parseFloat(a));
+      allText += `\n===== 第${i}页 =====\n`;
+      sortedLines.forEach(y => {
+        lines[y].sort((a,b) => a.x - b.x);
+        allText += lines[y].map(item => item.text).join(' ') + '\n';
+      });
+    }
+
+    if (!allText.trim()) {
+      document.getElementById('output').textContent = '(未提取到文本 - 此PDF可能是纯图形/扫描件)';
+    } else {
+      document.getElementById('output').textContent = allText;
+    }
+  } catch(err) {
+    document.getElementById('status').textContent = '解析错误: ' + err.message;
+  }
+}
+</script>
+</body></html>
